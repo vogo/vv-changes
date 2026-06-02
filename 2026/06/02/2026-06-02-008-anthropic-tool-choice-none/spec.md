@@ -57,4 +57,23 @@
 
 ## Change Log / Validation
 
-(执行后回填)
+### 变更
+
+- `anthropic.go`:
+  - `anthropicToolChoice` 新增 `DisableParallelToolUse *bool `json:"disable_parallel_tool_use,omitempty"``。
+  - `convertToolChoice` 的 `"none"` 分支由 `return nil` 改为 `return &anthropicToolChoice{Type: "none"}`(附注释说明省略 vs none 语义差异);其余分支不变。
+  - tool_choice 装配(原 `if req.ToolChoice != nil`)改为:`tc := convertToolChoice(req.ToolChoice)`(nil 输入安全返回 nil),当 `req.ParallelToolCalls != nil && !*req.ParallelToolCalls` 时,若 `tc == nil && len(req.Tools) > 0` 合成 `{type:"auto"}`,再对 `tc != nil && tc.Type != "none"` 置 `DisableParallelToolUse = &true`;最后 `ar.ToolChoice = tc`。
+- `anthropic_test.go`:
+  - `TestToAnthropicRequestToolChoice` 的 `"none"` 用例由 `wantNil=true` 改为断言 `{type:"none"}`。
+  - 新增 `TestToAnthropicRequestParallelToolCalls`(7 例):false+无choice+有工具→`{auto,disable}`;false+auto→`{auto,disable}`;false+具体工具→`{tool,name,disable}`;false+none→`{none}` 无标志;false+无choice+无工具→nil;true+auto→无标志;未设+auto→无标志。
+- 文档:`CHANGES.md` 新增同步条目(官方 2024-10-03 disable_parallel_tool_use / 2025-02-27 tool_choice none);`README.md` 的 `ParallelToolCalls` 行与 Anthropic Protocol 段补充 tool_choice 映射说明;`CLAUDE.md` Anthropic Translation 段补充同样映射说明。
+
+### 验证
+
+- `go test ./...` → 234 passed in 7 packages(原 226 + 新增/改写)。
+- 目标用例 `go test -run 'TestToAnthropicRequestToolChoice|TestToAnthropicRequestParallelToolCalls' ./...` → 13 passed。
+- `gofmt -l anthropic.go anthropic_test.go` 无输出;`go vet ./...` 无问题;无 `.test` 二进制残留。
+
+### 结论
+
+核心目标已由测试证据证明完成:`"none"`→`{type:"none"}`(不再省略);`ParallelToolCalls=false` 在 auto/any/tool 上输出 `disable_parallel_tool_use:true`、对 none 不输出、无工具时不合成非法 tool_choice;四种 tool_choice 映射 + 三种 ParallelToolCalls 情形单测通过;CHANGES.md/CLAUDE.md/README.md 与代码同步。无遗留下一循环。
